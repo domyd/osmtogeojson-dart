@@ -13,7 +13,7 @@ List<List<OsmNode>> join(List<ProcessedWayMember> ways) {
   final remaining = ways.map((w) => List<OsmNode>.from(w.nodes)).toList();
 
   while (remaining.isNotEmpty) {
-    final current = remaining.removeAt(0);
+    final current = remaining.removeLast();
     joined.add(current);
 
     while (remaining.isNotEmpty && !_nodesMatch(current.first, current.last)) {
@@ -40,12 +40,19 @@ List<List<OsmNode>> join(List<ProcessedWayMember> ways) {
           break;
         } else if (_nodesMatch(first, candidate.last)) {
           insertFn = (node) => current.insert(0, node);
-          segment = candidate.sublist(0, candidate.length - 1);
+          // Pre-reversed because insert(0, …) in a loop reverses the order
+          // (JS's unshift.apply preserves order, which our loop does not).
+          segment = candidate
+              .sublist(0, candidate.length - 1)
+              .reversed
+              .toList();
           foundIndex = i;
           break;
         } else if (_nodesMatch(first, candidate.first)) {
           insertFn = (node) => current.insert(0, node);
-          segment = candidate.sublist(1).reversed.toList();
+          // NOT pre-reversed: the segment itself is already in the desired
+          // ring order (candidate reversed without the matching first node).
+          segment = candidate.sublist(1);
           foundIndex = i;
           break;
         }
@@ -211,10 +218,10 @@ Map<String, dynamic>? constructMultipolygon(
   for (final cluster in mp) {
     final ringCoords = <List<List<double>>>[];
     for (final ring in cluster) {
-      if (ring.length < 4) {
+      if (ring.length < 3) {
         if (verbose) {
           print(
-            'Warning: Multipolygon $mpGeometry/$mpId contains a ring with less than four nodes',
+            'Warning: Multipolygon $mpGeometry/$mpId contains a ring with less than three nodes',
           );
         }
         continue;
@@ -225,7 +232,16 @@ Map<String, dynamic>? constructMultipolygon(
           coords.add([node.lon!, node.lat!]);
         }
       }
-      if (coords.isNotEmpty) {
+      // Per the GeoJSON spec (RFC 7946), the first and last positions of a
+      // linear ring MUST be identical. Close the ring if it isn't already.
+      if (coords.length >= 3) {
+        final first = coords.first;
+        final last = coords.last;
+        if (first[0] != last[0] || first[1] != last[1]) {
+          coords.add([first[0], first[1]]);
+        }
+      }
+      if (coords.length >= 4) {
         ringCoords.add(coords);
       }
     }

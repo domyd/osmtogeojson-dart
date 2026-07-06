@@ -16,6 +16,10 @@ class OsmParsedData {
   OsmParsedData({required this.nodes, required this.ways, required this.rels});
 }
 
+/// Converts an OSM element ID or member ref from JSON (which may be [num] or
+/// [String]) to its canonical [String] form.
+String _parseId(dynamic id) => id?.toString() ?? '';
+
 /// Parses Overpass JSON (or OSM JSON) format into element lists.
 OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
   final nodes = <OsmNode>[];
@@ -34,6 +38,15 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
     nodes.add(pseudoNode);
     return pseudoNode;
   }
+
+  /// Builds a stable anonymous node ID from coordinates.
+  ///
+  /// Uses [toStringAsFixed] so that e.g. `48` (int) and `48.0` (double)
+  /// produce the same string, which is critical for [_nodesMatch] in the
+  /// ring-assembly [join] function.
+  String _anonId(num lat, num lon) =>
+      '_anonymous@${lat.toDouble().toStringAsFixed(7)}/'
+      '${lon.toDouble().toStringAsFixed(7)}';
 
   /// Create a pseudo-node from inline lat/lon.
   OsmNode addFullGeometryNode(String id, double lat, double lon) {
@@ -56,7 +69,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
     switch (type) {
       case 'node':
         final node = OsmNode(
-          id: (element['id'] as num?)?.toString() ?? '',
+          id: _parseId(element['id']),
           lat: (element['lat'] as num?)?.toDouble(),
           lon: (element['lon'] as num?)?.toDouble(),
           tags: parseTags(element['tags']),
@@ -70,7 +83,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
         break;
 
       case 'way':
-        final wayId = (element['id'] as num?)?.toString() ?? '';
+        final wayId = _parseId(element['id']);
         final wayTags = parseTags(element['tags']);
 
         // Parse node refs, filtering out nulls
@@ -100,7 +113,9 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
             for (final nd in geometry) {
               if (nd != null) {
                 final ndMap = nd as Map<String, dynamic>;
-                geomNodes.add('_anonymous@${ndMap['lat']}/${ndMap['lon']}');
+                geomNodes.add(
+                  _anonId(ndMap['lat'] as num, ndMap['lon'] as num),
+                );
               } else {
                 geomNodes.add('_anonymous@unknown_location');
               }
@@ -192,14 +207,14 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
         break;
 
       case 'relation':
-        final relId = (element['id'] as num?)?.toString() ?? '';
+        final relId = _parseId(element['id']);
         final relTags = parseTags(element['tags']);
         final relMembersRaw = element['members'] as List<dynamic>? ?? [];
         final relMembers = relMembersRaw.map((m) {
           final mm = m as Map<String, dynamic>;
           return OsmMember(
             type: mm['type'] as String? ?? '',
-            ref: (mm['ref'] as num?)?.toString() ?? '',
+            ref: _parseId(mm['ref']),
             role: mm['role'] as String?,
           );
         }).toList();
@@ -242,8 +257,12 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
             } else if (mType == 'way') {
               final geom = member['geometry'] as List<dynamic>?;
               if (geom != null) {
-                // Prefix the ref with _fullGeom to namespace it
-                relMembers[i].ref = '_fullGeom${relMembers[i].ref}';
+                // Prefix the ref with _fullGeom to namespace it (only if not
+                // already prefixed — Overpass out:geom responses already have it).
+                final rawRef = relMembers[i].ref;
+                relMembers[i].ref = rawRef.startsWith('_fullGeom')
+                    ? rawRef
+                    : '_fullGeom$rawRef';
                 final geomWayId = relMembers[i].ref;
 
                 // Check if this way already exists
@@ -257,7 +276,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
                     if (nd != null) {
                       final ndMap = nd as Map<String, dynamic>;
                       final pseudoNode = OsmNode(
-                        id: '_anonymous@${ndMap['lat']}/${ndMap['lon']}',
+                        id: _anonId(ndMap['lat'] as num, ndMap['lon'] as num),
                         lat: (ndMap['lat'] as num).toDouble(),
                         lon: (ndMap['lon'] as num).toDouble(),
                         tags: {},

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:checks/checks.dart';
 import 'package:osmtogeojson/osmtogeojson.dart';
 import 'package:test/scaffolding.dart';
@@ -1768,7 +1771,11 @@ void main() {
           (geojson1['features'] as List<dynamic>)[0] as Map<String, dynamic>;
       check(f1['geometry']['type']).equals('Polygon');
       final coords1 = (f1['geometry']['coordinates'] as List)[0] as List;
-      check(coords1).length.isGreaterOrEqual(4);
+      // The ring is auto-closed: 4 unique nodes + repeated first = 5 positions
+      check(coords1).length.equals(5);
+      // Per GeoJSON spec, first and last positions must be identical
+      check((coords1.first as List<num>)).deepEquals([0.0, 0.0]);
+      check((coords1.last as List<num>)).deepEquals([0.0, 0.0]);
       check(f1['properties']['tainted']).isNull();
 
       // Two ways that join but form an unclosed ring.
@@ -1810,7 +1817,11 @@ void main() {
       check(f2['id']).equals('relation/1');
       check(f2['geometry']['type']).equals('Polygon');
       final coords2 = (f2['geometry']['coordinates'] as List)[0] as List;
-      check(coords2).length.equals(4);
+      // The ring is auto-closed: 4 joined nodes + repeated first = 5 positions
+      check(coords2).length.equals(5);
+      // Per GeoJSON spec, first and last positions must be identical
+      check((coords2.first as List<num>)).deepEquals([0.0, 1.0]);
+      check((coords2.last as List<num>)).deepEquals([0.0, 1.0]);
       // An auto-closed ring is not tainted
       check(f2['properties']['tainted']).isNull();
     });
@@ -2691,6 +2702,47 @@ void main() {
       check(fXml['geometry']['type']).equals('Polygon');
       final coordsXml = (fXml['geometry']['coordinates'] as List)[0] as List;
       check(coordsXml).length.equals(6);
+    });
+  });
+
+  group('regression', () {
+    test('real-world village boundary relation (Timelkam)', () {
+      // Load input from root (Overpass API JSON with full geometry)
+      final inputJson =
+          jsonDecode(File('test/data/input.json').readAsStringSync())
+              as Map<String, dynamic>;
+
+      // Load expected output
+      final expectedGeoJson =
+          jsonDecode(File('test/data/expected.geojson').readAsStringSync())
+              as Map<String, dynamic>;
+
+      // Convert with the same options the expected data was produced with
+      final actual = osmToGeoJson(
+        inputJson,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+
+      final expectedFeatures = expectedGeoJson['features'] as List<dynamic>;
+      final actualFeatures = actual['features'] as List<dynamic>;
+
+      final expectedPolygon = expectedFeatures.first as Map<String, dynamic>;
+      final actualPolygon =
+          actualFeatures.firstWhere(
+                (f) => (f as Map)['id'] == expectedPolygon['id'],
+              )
+              as Map<String, dynamic>;
+
+      // Geometry types should match
+      final eg = expectedPolygon['geometry'] as Map<String, dynamic>;
+      final ag = actualPolygon['geometry'] as Map<String, dynamic>;
+      check(ag['type']).equals(eg['type']);
+
+      final ec = eg['coordinates'] as List<dynamic>;
+      final ac = ag['coordinates'] as List<dynamic>;
+
+      // Coordinates must match exactly (same ring traversal order)
+      check(ac).deepEquals(ec);
     });
   });
 }
