@@ -105,6 +105,17 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
         final bounds = element['bounds'] as Map<String, dynamic>?;
         final geometry = element['geometry'] as List<dynamic>?;
 
+        // Convert bounds to GeoJSON bbox order [minLon, minLat, maxLon, maxLat]
+        List<double>? wayBounds;
+        if (bounds != null) {
+          wayBounds = [
+            (bounds['minlon'] as num).toDouble(),
+            (bounds['minlat'] as num).toDouble(),
+            (bounds['maxlon'] as num).toDouble(),
+            (bounds['maxlat'] as num).toDouble(),
+          ];
+        }
+
         // Handle full geometry (inline coordinates)
         if (geometry != null) {
           // If the way doesn't have a nodes array, create one from geometry
@@ -152,6 +163,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
             nodes: [],
             tags: wayTags,
             isBoundsPlaceholder: true,
+            bounds: wayBounds,
           );
 
           _addBoundsRing(
@@ -201,6 +213,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
             user: element['user'] as String?,
             uid: (element['uid'] as num?)?.toInt(),
             hasMissingNodeRefs: nodeRefsHadNulls,
+            bounds: wayBounds,
           );
           ways.add(way);
         }
@@ -221,6 +234,17 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
 
         final relCenter = element['center'] as Map<String, dynamic>?;
         final relBounds = element['bounds'] as Map<String, dynamic>?;
+
+        // Convert bounds to GeoJSON bbox order [minLon, minLat, maxLon, maxLat]
+        List<double>? relBoundsList;
+        if (relBounds != null) {
+          relBoundsList = [
+            (relBounds['minlon'] as num).toDouble(),
+            (relBounds['minlat'] as num).toDouble(),
+            (relBounds['maxlon'] as num).toDouble(),
+            (relBounds['maxlat'] as num).toDouble(),
+          ];
+        }
 
         // Check for full geometry in members
         var hasFullGeometry = false;
@@ -307,6 +331,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
             nodes: [],
             tags: relTags,
             isBoundsPlaceholder: true,
+            bounds: relBoundsList,
           );
 
           _addBoundsRing(
@@ -341,6 +366,7 @@ OsmParsedData parseOsmJson(Map<String, dynamic> json, bool verbose) {
           changeset: (element['changeset'] as num?)?.toInt(),
           user: element['user'] as String?,
           uid: (element['uid'] as num?)?.toInt(),
+          bounds: relBoundsList,
         );
         rels.add(rel);
         break;
@@ -428,11 +454,15 @@ OsmParsedData parseOsmXml(String xmlString, bool verbose) {
       return;
     }
 
+    // Store bounds in GeoJSON bbox order [minLon, minLat, maxLon, maxLat]
+    final wayBounds = [minlon, minlat, maxlon, maxlat];
+
     final pseudoWay = OsmWay(
       id: element.id,
       nodes: [],
       tags: Map<String, String>.from(element.tags),
       isBoundsPlaceholder: true,
+      bounds: wayBounds,
     );
 
     _addBoundsRing(
@@ -636,6 +666,17 @@ OsmParsedData parseOsmXml(String xmlString, bool verbose) {
     final boundsEl = relEl.findElements('bounds').firstOrNull;
     if (!hasFullGeometry && boundsEl != null) {
       boundsGeometry(relObject, boundsEl);
+      // Also store bounds on the relation itself for bbox output
+      final rMinlat = attrDouble(boundsEl, 'minlat');
+      final rMinlon = attrDouble(boundsEl, 'minlon');
+      final rMaxlat = attrDouble(boundsEl, 'maxlat');
+      final rMaxlon = attrDouble(boundsEl, 'maxlon');
+      if (rMinlat != null &&
+          rMinlon != null &&
+          rMaxlat != null &&
+          rMaxlon != null) {
+        relObject.bounds = [rMinlon, rMinlat, rMaxlon, rMaxlat];
+      }
     }
 
     rels.add(relObject);

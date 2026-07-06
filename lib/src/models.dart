@@ -62,6 +62,10 @@ class OsmWay extends OsmElement {
   /// Whether any node refs were missing or invalid during parsing.
   bool hasMissingNodeRefs;
 
+  /// Bounding box in GeoJSON order: `[minLon, minLat, maxLon, maxLat]`.
+  /// Set from OSM `bounds` data when present on the input element.
+  List<double>? bounds;
+
   OsmWay({
     required super.id,
     List<String>? nodes,
@@ -76,6 +80,7 @@ class OsmWay extends OsmElement {
     this.tainted = false,
     this.hidden = false,
     this.hasMissingNodeRefs = false,
+    this.bounds,
   }) : nodes = nodes ?? [],
        super(type: 'way');
 }
@@ -83,6 +88,10 @@ class OsmWay extends OsmElement {
 /// Represents an OSM relation element.
 class OsmRelation extends OsmElement {
   List<OsmMember>? members;
+
+  /// Bounding box in GeoJSON order: `[minLon, minLat, maxLon, maxLat]`.
+  /// Set from OSM `bounds` data when present on the input element.
+  List<double>? bounds;
 
   OsmRelation({
     required super.id,
@@ -93,6 +102,7 @@ class OsmRelation extends OsmElement {
     super.changeset,
     super.user,
     super.uid,
+    this.bounds,
   }) : super(type: 'relation');
 }
 

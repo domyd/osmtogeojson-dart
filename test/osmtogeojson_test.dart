@@ -2745,4 +2745,209 @@ void main() {
       check(ac).deepEquals(ec);
     });
   });
+
+  group('bbox', () {
+    test('way with bounds in json gets bbox', () {
+      final json = {
+        'elements': [
+          {
+            'type': 'way',
+            'id': 1,
+            'bounds': {
+              'minlat': 0.0,
+              'minlon': 0.0,
+              'maxlat': 1.0,
+              'maxlon': 1.0,
+            },
+          },
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      check(features).length.equals(1);
+      final f = features[0] as Map<String, dynamic>;
+      check(f['bbox'] as List<num>).deepEquals([0.0, 0.0, 1.0, 1.0]);
+    });
+
+    test('way with bounds in xml gets bbox', () {
+      const xml =
+          '<osm><way id="1">'
+          '<bounds minlat="0.0" minlon="0.0" maxlat="1.0" maxlon="1.0"/>'
+          '</way></osm>';
+      final geojson = osmToGeoJson(
+        xml,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      check(features).length.equals(1);
+      final f = features[0] as Map<String, dynamic>;
+      check(f['bbox'] as List<num>).deepEquals([0.0, 0.0, 1.0, 1.0]);
+    });
+
+    test('relation with bounds in json gets bbox', () {
+      final json = {
+        'elements': [
+          {
+            'type': 'relation',
+            'id': 1,
+            'tags': {'type': 'multipolygon'},
+            'members': [
+              {'type': 'way', 'ref': 2, 'role': 'outer'},
+            ],
+            'bounds': {
+              'minlat': 0.0,
+              'minlon': 0.0,
+              'maxlat': 2.0,
+              'maxlon': 2.0,
+            },
+          },
+          {
+            'type': 'way',
+            'id': 2,
+            'nodes': [3, 4, 5, 6, 3],
+          },
+          {'type': 'node', 'id': 3, 'lat': 0.0, 'lon': 0.0},
+          {'type': 'node', 'id': 4, 'lat': 0.0, 'lon': 1.0},
+          {'type': 'node', 'id': 5, 'lat': 1.0, 'lon': 1.0},
+          {'type': 'node', 'id': 6, 'lat': 1.0, 'lon': 0.0},
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      // Relation produces a multipolygon feature + a bounds pseudo-way feature
+      check(features).length.equals(2);
+      // Both features should have bbox from the relation's bounds
+      for (final f in features) {
+        check(
+          (f as Map<String, dynamic>)['bbox'] as List<num>,
+        ).deepEquals([0.0, 0.0, 2.0, 2.0]);
+      }
+    });
+
+    test('relation with bounds in xml gets bbox', () {
+      const xml =
+          '<osm>'
+          '<relation id="1">'
+          '<tag k="type" v="multipolygon"/>'
+          '<member type="way" ref="2" role="outer"/>'
+          '<bounds minlat="0.0" minlon="0.0" maxlat="2.0" maxlon="2.0"/>'
+          '</relation>'
+          '<way id="2">'
+          '<nd ref="3"/><nd ref="4"/><nd ref="5"/><nd ref="6"/><nd ref="3"/>'
+          '</way>'
+          '<node id="3" lat="0.0" lon="0.0"/>'
+          '<node id="4" lat="0.0" lon="1.0"/>'
+          '<node id="5" lat="1.0" lon="1.0"/>'
+          '<node id="6" lat="1.0" lon="0.0"/>'
+          '</osm>';
+      final geojson = osmToGeoJson(
+        xml,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      // Relation produces a multipolygon feature + a bounds pseudo-way feature
+      check(features).length.equals(2);
+      for (final f in features) {
+        check(
+          (f as Map<String, dynamic>)['bbox'] as List<num>,
+        ).deepEquals([0.0, 0.0, 2.0, 2.0]);
+      }
+    });
+
+    test('way without bounds does not get bbox', () {
+      final json = {
+        'elements': [
+          {
+            'type': 'way',
+            'id': 1,
+            'nodes': [2, 3, 4],
+          },
+          {'type': 'node', 'id': 2, 'lat': 0.0, 'lon': 0.0},
+          {'type': 'node', 'id': 3, 'lat': 0.0, 'lon': 1.0},
+          {'type': 'node', 'id': 4, 'lat': 1.0, 'lon': 1.0},
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      check(features).length.equals(1);
+      final f = features[0] as Map<String, dynamic>;
+      check(f).not((f) => f.containsKey('bbox'));
+    });
+
+    test('point feature does not get bbox', () {
+      final json = {
+        'elements': [
+          {'type': 'node', 'id': 1, 'lat': 1.234, 'lon': 4.321},
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      check(features).length.equals(1);
+      final f = features[0] as Map<String, dynamic>;
+      check(f).not((f) => f.containsKey('bbox'));
+    });
+
+    test('does not set bbox for out-of-range coordinates', () {
+      final json = {
+        'elements': [
+          {
+            'type': 'way',
+            'id': 1,
+            'bounds': {
+              'minlat': -100.0, // invalid latitude
+              'minlon': 0.0,
+              'maxlat': 100.0, // invalid latitude
+              'maxlon': 0.0,
+            },
+          },
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      final f = features[0] as Map<String, dynamic>;
+      check(f).not((f) => f.containsKey('bbox'));
+    });
+
+    test('bbox is in correct geojson order', () {
+      // OSM bounds are minlat, minlon, maxlat, maxlon
+      // GeoJSON bbox is [minlon, minlat, maxlon, maxlat]
+      final json = {
+        'elements': [
+          {
+            'type': 'way',
+            'id': 1,
+            'bounds': {
+              'minlat': -10.0,
+              'minlon': -20.0,
+              'maxlat': 10.0,
+              'maxlon': 20.0,
+            },
+          },
+        ],
+      };
+      final geojson = osmToGeoJson(
+        json,
+        options: const OsmToGeoJsonOptions(flatProperties: false),
+      );
+      final features = geojson['features'] as List<dynamic>;
+      final f = features[0] as Map<String, dynamic>;
+      // West, south, east, north
+      check(f['bbox'] as List<num>).deepEquals([-20.0, -10.0, 20.0, 10.0]);
+    });
+  });
 }

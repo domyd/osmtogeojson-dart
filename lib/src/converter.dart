@@ -2,10 +2,10 @@
 library;
 
 import 'models.dart';
-import 'options.dart';
-import 'utils.dart';
-import 'polygon_features.dart';
 import 'multipolygon_helper.dart';
+import 'options.dart';
+import 'polygon_features.dart';
+import 'utils.dart';
 
 /// Main conversion function — takes parsed OSM elements and produces a list of
 /// GeoJSON Feature maps (polygons first, then lines, then points).
@@ -161,6 +161,7 @@ List<Map<String, dynamic>> convert2geoJSON(
       ),
       geometryType: 'Point',
       coordinates: [poi.lon, poi.lat],
+      bbox: null,
     );
     if (poi.isCenterPlaceholder) {
       feature['properties']['geometry'] = 'center';
@@ -224,6 +225,7 @@ List<Map<String, dynamic>> convert2geoJSON(
         ),
         geometryType: geomType,
         coordinates: coords.length == 1 ? coords[0] : coords,
+        bbox: rel.bounds,
       );
       if (isTainted) {
         if (verbose) {
@@ -329,6 +331,7 @@ List<Map<String, dynamic>> convert2geoJSON(
           ),
           geometryType: geomType,
           coordinates: coordinates,
+          bbox: rel.bounds,
         );
         if (tainted) {
           if (verbose) {
@@ -385,6 +388,7 @@ List<Map<String, dynamic>> convert2geoJSON(
           ),
           geometryType: geomType,
           coordinates: coordinates,
+          bbox: outerWay.bounds ?? rel.bounds,
         );
         if (tainted) {
           if (verbose) {
@@ -487,6 +491,7 @@ List<Map<String, dynamic>> convert2geoJSON(
       ),
       geometryType: wayType,
       coordinates: geomCoords,
+      bbox: way.bounds,
     );
 
     if (way.tainted) {
@@ -532,6 +537,29 @@ List<Map<String, dynamic>> convert2geoJSON(
 
 // ---- Helper functions ----
 
+/// Validates and sets the bbox field on a GeoJSON feature.
+///
+/// Only sets `'bbox'` if [bounds] is non-null, has 4 elements, all values
+/// are finite, and coordinates are within valid geographic ranges per
+/// RFC 7946: longitude in [-180, 180], latitude in [-90, 90].
+List<double>? _validateBbox(List<double>? bounds) {
+  if (bounds == null || bounds.length != 4) return null;
+  for (var i = 0; i < 4; i++) {
+    if (!bounds[i].isFinite) return null;
+  }
+  // Validate geographic bounds per GeoJSON spec
+  if (bounds[0] < -180 ||
+      bounds[0] > 180 ||
+      bounds[2] < -180 ||
+      bounds[2] > 180) {
+    return null;
+  }
+  if (bounds[1] < -90 || bounds[1] > 90 || bounds[3] < -90 || bounds[3] > 90) {
+    return null;
+  }
+  return bounds;
+}
+
 /// Builds a GeoJSON Feature map.
 Map<String, dynamic> _buildFeature({
   required String type,
@@ -541,6 +569,7 @@ Map<String, dynamic> _buildFeature({
   required Map<String, dynamic> meta,
   required String geometryType,
   required dynamic coordinates,
+  required List<double>? bbox,
 }) {
   return {
     'type': 'Feature',
@@ -552,6 +581,7 @@ Map<String, dynamic> _buildFeature({
       'relations': relations,
       'meta': meta,
     },
+    'bbox': ?_validateBbox(bbox),
     'geometry': {'type': geometryType, 'coordinates': coordinates},
   };
 }
@@ -642,6 +672,7 @@ OsmWay _deduplicateWay(
   if (b.nodes.isNotEmpty) a.nodes = b.nodes;
   if (b.isBoundsPlaceholder) a.isBoundsPlaceholder = true;
   if (b.hasMissingNodeRefs) a.hasMissingNodeRefs = true;
+  if (b.bounds != null) a.bounds = b.bounds;
   a.tags.addAll(b.tags);
   return a;
 }
@@ -665,6 +696,7 @@ OsmRelation _deduplicateRelation(
   if (b.changeset != null) a.changeset = b.changeset;
   if (b.user != null) a.user = b.user;
   if (b.uid != null) a.uid = b.uid;
+  if (b.bounds != null) a.bounds = b.bounds;
   a.tags.addAll(b.tags);
   return a;
 }
@@ -677,6 +709,7 @@ Map<String, dynamic> _osmElementToMap(OsmElement el) {
   if (el.changeset != null) m['changeset'] = el.changeset;
   if (el.user != null) m['user'] = el.user;
   if (el.uid != null) m['uid'] = el.uid;
+  if (el is OsmRelation && el.bounds != null) m['bounds'] = el.bounds;
   return m;
 }
 
@@ -692,6 +725,7 @@ Map<String, dynamic> _osmNodeToMap(OsmNode el) {
 Map<String, dynamic> _osmWayToMap(OsmWay el) {
   final m = _osmElementToMap(el);
   m['nodes'] = el.nodes;
+  if (el.bounds != null) m['bounds'] = el.bounds;
   return m;
 }
 
@@ -724,6 +758,9 @@ OsmWay _mapToOsmWay(Map<String, dynamic> m) {
     changeset: (m['changeset'] as num?)?.toInt(),
     user: m['user'] as String?,
     uid: (m['uid'] as num?)?.toInt(),
+    bounds: (m['bounds'] as List<dynamic>?)
+        ?.map((v) => (v as num).toDouble())
+        .toList(),
   );
 }
 
@@ -737,6 +774,9 @@ OsmRelation _mapToOsmRelation(Map<String, dynamic> m) {
     changeset: (m['changeset'] as num?)?.toInt(),
     user: m['user'] as String?,
     uid: (m['uid'] as num?)?.toInt(),
+    bounds: (m['bounds'] as List<dynamic>?)
+        ?.map((v) => (v as num).toDouble())
+        .toList(),
   );
 }
 
