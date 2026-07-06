@@ -1,6 +1,6 @@
 name: osmtogeojson
 description: "Converts OSM data (XML or Overpass JSON) to GeoJSON FeatureCollections."
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/domyd/osmtogeojson-dart
 topics:
   - geojson
